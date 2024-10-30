@@ -1,0 +1,311 @@
+---
+title: "PAC1"
+author: "Laia Sola Reguant"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("SummarizedExperiment")
+install.packages("readr")
+
+# Carregar les llibreries
+library(SummarizedExperiment)
+library(readr)
+library(ggplot2)
+```
+
+
+```{r}
+# Carregar els fitxers de dades
+data_info <- read_csv("C:/Users/039421852J/Desktop/Laia/UOC/DadesOmiques/PAC1/DataInfo_S013.csv")
+head(data_info)
+data_values <- read_csv("DataValues_S013.csv")
+head(data_values)
+
+# Desar els objectes en un fitxer .Rda
+save(data_values, data_info, file = "dades_HBA1C.Rda")
+```
+
+
+**Processar les Dades per Crear l'Objecte SummarizedExperiment**
+
+Dades d'expressió: Transformem les dades clíniques i metabolòmiques en una matriu.
+Metadades de les mostres (patients): Extreiem la informació rellevant de DataInfo_S013.csv.
+Metadades dels metabòlits (variables): Utilitzem AAInformation_S006.csv per descriure cada variable.
+
+```{r}
+# Crear matriu d'expressió amb els valors de les dades metabolòmiques
+expression_data <- as.matrix(data_values[, -c(1:2)]) # Assumint que les primeres dues columnes són identificadors
+
+# Metadades de les mostres: Utilitzem les primeres columnes per identificar cada mostra i el temps
+sample_metadata <- data_values[, 1:2] # Primeres dues columnes com metadades de les mostres
+
+# Metadades de les variables: Extreure les descripcions de cada metabòlit
+variable_metadata <- data_info
+
+# # Crear l'objecte SummarizedExperiment
+# se <- SummarizedExperiment(
+#     assays = list(counts = expression_data),
+#     colData = sample_metadata,
+#     rowData = variable_metadata
+# )
+# 
+# # Comprovar l'objecte SummarizedExperiment creat
+# print(se)
+```
+
+
+**Paso 2: Preparar los datos, anàlisi de les dimensions i tipus de dades**
+Debes asegurarte de que los datos estén en el formato correcto. Esto incluye tratar con valores faltantes y convertir las variables categóricas en factores.
+
+```{r}
+# Dimensions del dataset
+dim(data_values)
+# Tipus de dades de cada columna
+str(data_values)
+
+# Verificar el resumen de los datos
+summary(data_values)
+
+# Convertir variables categóricas en factores si es necesario
+data_values$GENDER <- as.factor(data_values$GENDER)
+data_values$Group <- as.factor(data_values$Group)
+data_values$SURGERY <- as.factor(data_values$SURGERY)
+
+sum(is.na(data_values))
+```
+
+
+**Visualització de les variables**
+
+```{r}
+# Histogrames de les variables numèriques
+numeric_columns <- sapply(data_values, is.numeric)
+data_numeric <- data_values[, numeric_columns]
+
+# Crear histogrames per a cada variable numèrica
+par(mfrow=c(2, 3))  # Ajustem el layout per a múltiples gràfics
+for (col in names(data_numeric)) {
+  hist(data_numeric[[col]], main = paste("Histograma de", col), xlab = col, col = "blue", border = "black")
+}
+
+# Boxplots per a les variables numèriques
+par(mfrow=c(2, 3))  # Ajustem el layout per a múltiples gràfics
+for (col in names(data_numeric)) {
+  boxplot(data_numeric[[col]], main = paste("Boxplot de", col), ylab = col)
+}
+
+```
+
+**6. Visualització de relacions entre variables**
+Podem crear gràfics de dispersió per veure les relacions entre algunes de les variables numèriques.
+
+```{r}
+# Gràfic de dispersió entre dues variables numèriques
+ggplot(data_values, aes(x = GLU_T0, y = HBA1C_T0)) +
+  geom_point() +
+  labs(title = "Gràfic de dispersió entre GLU_T0 i HBA1C_T0", x = "GLU_T0", y = "HBA1C_T0") +
+  theme_minimal()
+```
+
+**Anàlisi de les variables categòriques**
+
+```{r}
+# Gràfic de barres per a la variable GENDER
+ggplot(data_values, aes(x = GENDER)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribució de Gènere", x = "Gènere", y = "Nombre de casos") +
+  theme_minimal()
+```
+
+**Correlacions**
+```{r}
+# Matriu de correlació
+cor_matrix <- cor(data_numeric, use = "complete.obs")
+print(cor_matrix)
+
+# Visualitzar la matriu de correlació
+library(corrplot)
+corrplot(cor_matrix, method = "circle")
+```
+
+```{r}
+# Seleccionar les primeres 6 o 8 variables del conjunt de dades numèric
+data_subset <- data_values[, 8:12]  # Canvia a 1:8 si vols les primeres 8 variables
+
+# Calcular la matriu de correlació per al subset de variables
+cor_matrix <- cor(data_subset, use = "complete.obs")
+print(cor_matrix)
+
+# Visualitzar la matriu de correlació
+library(corrplot)
+corrplot(cor_matrix, method = "circle")
+
+```
+
+
+
+**Paso 3: Ajustar el modelo de regresión**
+Aquí ajustamos un modelo de regresión lineal múltiple para predecir HBA1C_T0 utilizando otras variables independientes.
+
+```{r}
+# Ajustar el modelo de regresión lineal múltiple
+modelo <- lm(HBA1C_T0 ~ AGE + GENDER + PESO_T0 + bmi_T0 + GLU_T0 + INS_T0, data = data_values)
+
+# Resumen del modelo
+summary(modelo)
+
+```
+Puedes evaluar el modelo observando el resumen, la R cuadrada, los valores p, y los coeficientes.
+
+```{r}
+# Evaluar el modelo
+summary(modelo)
+
+# Graficar los residuos
+par(mfrow = c(2, 2))
+plot(modelo)
+```
+
+**Paso 5: Predicciones**
+Para realizar predicciones basadas en el modelo ajustado, puedes usar la función predict.
+
+```{r}
+# Realizar predicciones
+predicciones <- predict(modelo, newdata = data_values)
+
+# Agregar las predicciones al conjunto de datos original
+data_values$predicciones_HBA1C_T0 <- predicciones
+
+# Ver las primeras filas con las predicciones
+head(data_values$predicciones_HBA1C_T0)
+
+```
+
+
+
+
+#####CODI SENCER######
+
+
+```{r}
+# Carregar les llibreries
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager")
+}
+BiocManager::install("SummarizedExperiment")
+install.packages("readr")
+library(SummarizedExperiment)
+library(readr)
+library(ggplot2)
+
+# Carregar les dades
+data_info <- read_csv("C:/Users/039421852J/Desktop/Laia/UOC/DadesOmiques/PAC1/DataInfo_S013.csv")
+data_values <- read_csv("DataValues_S013.csv")
+
+# Mostrar les primeres files per verificar que s'han carregat correctament
+head(data_info)
+head(data_values)
+```
+
+```{r}
+# Crear matriu d'expressió amb els valors de les dades metabolòmiques
+expression_data <- as.matrix(data_values[, -c(1:2)]) # Assumint que les primeres dues columnes són identificadors
+
+# Metadades de les mostres
+sample_metadata <- data_values[, 1:2] # Primeres dues columnes com metadades de les mostres
+
+# Metadades dels metabòlits
+variable_metadata <- data_info
+
+# Crear l'objecte SummarizedExperiment
+se <- SummarizedExperiment(
+    assays = list(counts = expression_data),
+    colData = sample_metadata,
+    rowData = variable_metadata
+)
+
+# Comprovar l'objecte SummarizedExperiment creat
+print(se)
+```
+
+
+```{r}
+# Dimensions del dataset
+dim(data_values)
+
+# Tipus de dades de cada columna
+str(data_values)
+
+# Resum dels dades
+summary(data_values)
+
+# Convertir variables categòriques en factors
+data_values$GENDER <- as.factor(data_values$GENDER)
+data_values$Group <- as.factor(data_values$Group)
+data_values$SURGERY <- as.factor(data_values$SURGERY)
+
+# Comprovar si hi ha valors nuls
+sum(is.na(data_values))
+
+```
+
+```{r}
+# Histogrames de les variables numèriques
+numeric_columns <- sapply(data_values, is.numeric)
+data_numeric <- data_values[, numeric_columns]
+
+# Crear histogrames
+par(mfrow=c(2, 3))  # Ajustem el layout
+for (col in names(data_numeric)) {
+  hist(data_numeric[[col]], main = paste("Histograma de", col), xlab = col, col = "blue", border = "black")
+}
+
+# Boxplots
+par(mfrow=c(2, 3))  # Ajustem el layout
+for (col in names(data_numeric)) {
+  boxplot(data_numeric[[col]], main = paste("Boxplot de", col), ylab = col)
+}
+```
+
+```{r}
+# Gràfic de dispersió entre dues variables numèriques
+ggplot(data_values, aes(x = GLU_T0, y = HBA1C_T0)) +
+  geom_point() +
+  labs(title = "Gràfic de dispersió entre GLU_T0 i HBA1C_T0", x = "GLU_T0", y = "HBA1C_T0") +
+  theme_minimal()
+```
+
+```{r}
+# Matriu de correlació
+cor_matrix <- cor(data_numeric, use = "complete.obs")
+
+# Visualitzar la matriu de correlació
+library(corrplot)
+corrplot(cor_matrix, method = "circle")
+```
+
+```{r}
+# Ajustar el model de regressió lineal múltiple
+modelo <- lm(HBA1C_T0 ~ AGE + GENDER + PESO_T0 + bmi_T0 + GLU_T0 + INS_T0, data = data_values)
+
+# Resum del model
+summary(modelo)
+```
+
+```{r}
+# Realitzar prediccions
+prediccions <- predict(modelo, newdata = data_values)
+
+# Afegir les prediccions al conjunt de dades
+data_values$Prediccions_HBA1C_T0 <- prediccions
+
+# Mostrar les primeres files amb les prediccions
+head(data_values$Prediccions_HBA1C_T0)
+
+```
+
